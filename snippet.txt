@@ -1,0 +1,77 @@
+#@overlay/match by=overlay.subset({"kind":"KubeadmControlPlane"})
+---
+apiVersion: controlplane.cluster.x-k8s.io/v1alpha3
+kind: KubeadmControlPlane
+metadata:
+ name: #@ "{}-control-plane".format(data.values.CLUSTER_NAME)
+spec:
+ infrastructureTemplate:
+   apiVersion: infrastructure.cluster.x-k8s.io/v1alpha3
+   kind: VSphereMachineTemplate
+   name: #@ "{}-control-plane".format(data.values.CLUSTER_NAME)
+ kubeadmConfigSpec:
+   clusterConfiguration:
+     imageRepository: #@ kubeadm_image_repo(bomDataForK8sVersion.kubeadmConfigSpec.imageRepository)
+     etcd:
+       local:
+         imageRepository: #@ kubeadm_image_repo(bomDataForK8sVersion.kubeadmConfigSpec.etcd.local.imageRepository)
+         imageTag: #@ bomDataForK8sVersion.kubeadmConfigSpec.etcd.local.imageTag
+     dns:
+       imageRepository: #@ kubeadm_image_repo(bomDataForK8sVersion.kubeadmConfigSpec.dns.imageRepository)
+       imageTag: #@ bomDataForK8sVersion.kubeadmConfigSpec.dns.imageTag
+   files:
+   #@overlay/match by=overlay.index(0)
+   - content: #@ yaml.encode(kube_vip_pod())
+   preKubeadmCommands:
+   #! Adding your custom CA certificate
+   #@overlay/append
+   - |
+     cat <<EOF > /etc/ssl/certs/myca.pem
+     -----BEGIN CERTIFICATE-----
+     MIIFGDCCAwACCQCN5wYlscWbuTANBgkqhkiG9w0BAQsFADBOMQswCQYDVQQGEwJV
+     ...
+     6yWIMDY6InMD3EAG
+     -----END CERTIFICATE-----
+     EOF
+   #@overlay/append
+   - openssl x509 -in /etc/ssl/certs/myca.pem -text  -fingerprint >>/etc/pki/tls/certs/ca-bundle.crt
+   users:
+   #@overlay/match by=overlay.index(0)
+   #@overlay/replace
+   - name: capv
+     sshAuthorizedKeys:
+     - #@ data.values.VSPHERE_SSH_AUTHORIZED_KEY
+     sudo: ALL=(ALL) NOPASSWD:ALL
+ replicas: #@ data.values.CONTROL_PLANE_MACHINE_COUNT
+ version: #@ data.values.KUBERNETES_VERSION
+
+#@overlay/match by=overlay.subset({"kind":"KubeadmConfigTemplate"})
+---
+apiVersion: bootstrap.cluster.x-k8s.io/v1alpha3
+kind: KubeadmConfigTemplate
+metadata:
+ name: #@ "{}-md-0".format(data.values.CLUSTER_NAME)
+spec:
+ template:
+   spec:
+     preKubeadmCommands:
+     #! Adding your custom CA certificate
+     #@overlay/append
+     - |
+       cat <<EOF > /etc/ssl/certs/myca.pem
+       -----BEGIN CERTIFICATE-----
+       MIIFGDCCAwACCQCN5wYlscWbuTANBgkqhkiG9w0BAQsFADBOMQswCQYDVQQGEwJV
+       ...
+       6yWIMDY6InMD3EAG
+       -----END CERTIFICATE-----
+       EOF
+     #@overlay/append
+     - openssl x509 -in /etc/ssl/certs/myca.pem -text  -fingerprint >>/etc/pki/tls/certs/ca-bundle.crt
+     users:
+     #@overlay/match by=overlay.index(0)
+     #@overlay/replace
+     - name: capv
+       sshAuthorizedKeys:
+       - #@ data.values.VSPHERE_SSH_AUTHORIZED_KEY
+       sudo: ALL=(ALL) NOPASSWD:ALL
+
